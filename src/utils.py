@@ -114,32 +114,50 @@ def get_data(dataset, num):
 
     return pd.DataFrame.from_dict(res)
 
-def get_data_input(dataset, num):
+def get_data_input(dataset, length):
     """
     Fetches data for input
 
     Args:
      `dataset`: a Panda Dataset
-     `num`: a number for how many amiooacids should go into the input
+     `num`: a number for how many aminoacids should go into the input
 
     Returns a DataFrame object with the fetched data
     """
-    res = {'Sequence' : [], 'Clan ID' : [], 'Family ID' : []}
+    #res = {'Sequence' : [], 'Clan ID' : [], 'Family ID' : []}
     
-    for i in range(len(dataset)):
-        # Fetch this entry
-        Clan = dataset['Clan ID'].iloc[i]
-        Family = dataset['Family ID'].iloc[i]
-        sequence = dataset['Sequence'].iloc[i]
-        # Otherwise, store the data
-        res['Sequence'].append(sequence.astype('int16'))
-        res['Clan ID'].append(Clan.astype('int16'))
-        res['Family ID'].append(Family.astype('int16'))
+    res = {'Sequence' : []}
+    
+    # For each row, pad and append
+    for _, row in dataset.iterrows():
+        # Get entries
+        clan = row['Clan ID']
+        family = row['Family ID']
+        seq = row['Sequence'].astype('int16')
+        
+        # Pad sequence
+        seq = seq[:length] if len(seq) >= length else np.append(seq, np.zeros(length-len(seq)))
+        
+        # Prepend clan and family
+        seq = np.append(np.array([clan, family]), seq)
+        
+        # Add result to final dict
+        res['Sequence'].append(seq)
+    
+    #for i in range(len(dataset)):
+    #    # Fetch this entry
+    #    Clan = dataset['Clan ID'].iloc[i]
+    #    Family = dataset['Family ID'].iloc[i]
+    #    sequence = dataset['Sequence'].iloc[i]
+    #    # Otherwise, store the data
+    #    res['Sequence'].append(sequence.astype('int16'))
+    #    res['Clan ID'].append(Clan.astype('int16'))
+    #    res['Family ID'].append(Family.astype('int16'))
 
     return pd.DataFrame.from_dict(res)
 
 
-def get_data_output(dataset):
+def get_data_output(dataset, length):
     """
     Fetches data for output
 
@@ -150,10 +168,15 @@ def get_data_output(dataset):
     """
     res = {'Sequence' : []}
     
-    for i in range(len(dataset)):
-        # Fetch this entry
-        sequence = ((dataset['Sequence'].iloc[i]))
-        # Otherwise, store the data
-        res['Sequence'].append(sequence.astype('int16'))
+    # For each row, pad and append
+    for _, row in dataset.iterrows():
+        # Get entries
+        seq = row['Sequence'].astype('int16')
+        
+        # Pad sequence
+        seq = seq[:length] if len(seq) >= length else np.append(seq, np.zeros(length-len(seq)))
+        
+        # Add result to final dict
+        res['Sequence'].append(seq)
 
     return pd.DataFrame.from_dict(res)
