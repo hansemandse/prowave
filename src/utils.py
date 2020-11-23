@@ -142,7 +142,7 @@ def get_data_input(dataset, length):
         seq = np.append(np.array([clan, family]), seq)
         
         # Add result to final dict
-        res['Sequence'].append(seq)
+        res['Sequence'].append(seq.astype('int32'))
     
     #for i in range(len(dataset)):
     #    # Fetch this entry
@@ -177,6 +177,6 @@ def get_data_output(dataset, length):
         seq = seq[:length] if len(seq) >= length else np.append(seq, np.zeros(length-len(seq)))
         
         # Add result to final dict
-        res['Sequence'].append(seq)
+        res['Sequence'].append(seq.astype('int32'))
 
     return pd.DataFrame.from_dict(res)
