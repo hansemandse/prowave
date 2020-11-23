@@ -113,3 +113,47 @@ def get_data(dataset, num):
             print(f"\033[FProcess [{'='*(i//bound)}{' '*(100-i//bound)}]")
 
     return pd.DataFrame.from_dict(res)
+
+def get_data_input(dataset, num):
+    """
+    Fetches data for input
+
+    Args:
+     `dataset`: a Panda Dataset
+     `num`: a number for how many amiooacids should go into the input
+
+    Returns a DataFrame object with the fetched data
+    """
+    res = {'Sequence' : [], 'Clan ID' : [], 'Family ID' : []}
+    
+    for i in range(len(dataset)):
+        # Fetch this entry
+        Clan = dataset['Clan ID'].iloc[i]
+        Family = dataset['Family ID'].iloc[i]
+        sequence = dataset['Sequence'].iloc[i]
+        # Otherwise, store the data
+        res['Sequence'].append(sequence.astype('int16'))
+        res['Clan ID'].append(Clan)
+        res['Family ID'].append(Family)
+
+    return pd.DataFrame.from_dict(res)
+
+
+def get_data_output(dataset):
+    """
+    Fetches data for output
+
+    Args:
+     `dataset`: a Panda Dataset
+
+    Returns a DataFrame object with the fetched data
+    """
+    res = {'Sequence' : []}
+    
+    for i in range(len(dataset)):
+        # Fetch this entry
+        sequence = ((dataset['Sequence'].iloc[i])-110)
+        # Otherwise, store the data
+        res['Sequence'].append(sequence.astype('int16'))
+
+    return pd.DataFrame.from_dict(res)
