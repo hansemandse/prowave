@@ -104,9 +104,9 @@ def get_data(dataset, num):
             continue
 
         # Otherwise, store the data
-        res['Sequence'].append(row[0].astype('int8'))
-        res['Clan ID'].append(clan)
-        res['Family ID'].append(row[3])
+        res['Sequence'].append(row[0].astype('int16'))
+        res['Clan ID'].append(clan.astype('int16'))
+        res['Family ID'].append(row[3].astype('int16'))
 
         # Update process
         if (i % bound == 0):
@@ -133,8 +133,8 @@ def get_data_input(dataset, num):
         sequence = dataset['Sequence'].iloc[i]
         # Otherwise, store the data
         res['Sequence'].append(sequence.astype('int16'))
-        res['Clan ID'].append(Clan)
-        res['Family ID'].append(Family)
+        res['Clan ID'].append(Clan.astype('int16'))
+        res['Family ID'].append(Family.astype('int16'))
 
     return pd.DataFrame.from_dict(res)
 
@@ -152,7 +152,7 @@ def get_data_output(dataset):
     
     for i in range(len(dataset)):
         # Fetch this entry
-        sequence = ((dataset['Sequence'].iloc[i])-110)
+        sequence = ((dataset['Sequence'].iloc[i]))
         # Otherwise, store the data
         res['Sequence'].append(sequence.astype('int16'))
 
