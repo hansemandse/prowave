@@ -1,3 +1,0 @@
-[submodule "./src/wavenet"]
-	path = ./src/wavenet
-	url = https://github.com/Dankrushen/Wavenet-PyTorch.git
