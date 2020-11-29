@@ -22,7 +22,7 @@ def nll_loss(Y_hat, Y, vocab_size):
 
     # Filter out all padding tokens
     mask = (Y > 0).float()
-    tokens = int(torch.sum(mask).data)
+    tokens = int(torch.sum(mask).item())
     Y_hat = Y_hat[range(Y_hat.shape[0]), Y] * mask
 
     # Return cross-entropy loss
@@ -139,14 +139,15 @@ class ProLSTM(nn.Module):
         # Run through network
         X_LSTM = nn.utils.rnn.pack_padded_sequence(X, X_lengths, batch_first = True, enforce_sorted = False) # This is set to make sure a not sorted sequence of lenghts is given.
         X_LSTM, self.hidden = self.lstm(X_LSTM, self.hidden)
-        X_LSTM, _ = nn.utils.rnn.pad_packed_sequence(X_LSTM, batch_first = True, padding_value = 0)
+        X_LSTM, _ = nn.utils.rnn.pad_packed_sequence(X_LSTM, batch_first = True, padding_value = 0, total_length = 514)
         
         # Make sure the padding is correct for the output - Batchsize - Sequence - LSTM Hidden
         # Batch Size, Max Seq in batch, LSTM Hidden - Padding such that it is Batch Size, Seqlen , LSTM Hidden
         # We need to add some Extra Padding Here
         X = X_LSTM
+        _, seq_len, _ = X.size()
         
-        X = X.view(batch_size, seq_len, self.lstm_hidden_size)
+        #X = X.view(batch_size, seq_len, self.lstm_hidden_size)
         
         # Run through linear layer
         X = X.contiguous()
