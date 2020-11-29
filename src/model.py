@@ -1,10 +1,14 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.optim as optim
 from torch.autograd import Variable
+import matplotlib.pyplot as plt
+import seaborn as sns
+sns.set_style('whitegrid')
 
 # Negative log-likelihood loss
-def nll_loss(self, Y_hat, Y, vocab_size):
+def nll_loss(Y_hat, Y, vocab_size):
     
     # Remove the padding
     #Y = nn.utils.rnn.pack_padded_sequence(torch.squeeze(Y), lengths, batch_first = True, enforce_sorted = False) # This is set to make sure a not sorted sequence of lenghts is given.
@@ -23,9 +27,58 @@ def nll_loss(self, Y_hat, Y, vocab_size):
     return -torch.sum(Y_hat) / tokens
 
 # Perplexity
-def plex_loss(self, Y_hat, Y, X_lengths):
+def plex_loss(Y_hat, Y, X_lengths):
     # Perplexity is just exponential cross-entropy
-    return torch.exp(self.nll_loss(Y_hat, Y, X_lengths))
+    return torch.exp(nll_loss(Y_hat, Y, X_lengths))
+
+# Training loop
+def train(net, loader, vocab_size = 30, criterion = nll_loss, epochs = 500):
+    optimizer = optim.Adam(net.parameters(), lr=0.002)
+
+    # For tracking intermediate values
+    training_loss = []
+
+    # Training loop - first set the network into training mode
+    net.train()
+    for i in range(epochs):
+        epoch_training_loss = 0
+
+        # For each sentence in training set
+        for inputs, targets in loader:
+
+            # To calculate forward pass, we must calculate the original sequence lengths of the
+            # input tensors without padding characters
+            input_lengths = [sum(k > 0) for k in inputs] 
+            target_lengths = [sum(l > 0) for l in targets] # Skip the Clan and Family ID by using the targets
+
+            # Forward pass
+            optimizer.zero_grad()
+
+            output = net(inputs, torch.tensor(input_lengths))
+            batch_loss = criterion(output, targets, vocab_size)
+
+            # Back-propagation and weight update
+            batch_loss.backward()
+            optimizer.step() 
+
+            # Update loss
+            epoch_training_loss += batch_loss.detach().numpy()
+
+        # Save loss for plot
+        training_loss.append(epoch_training_loss / len(loader))
+
+        # Print loss every epoch
+        print(f'Epoch {i}, training loss: {training_loss[-1]}')
+
+    ## Plot training and validation loss
+    #epoch = np.arange(len(training_loss))
+    plt.figure()
+    plt.plot(i, training_loss, 'r', label='Training loss',)
+    #plt.plot(epoch, validation_loss, 'b', label='Validation loss')
+    plt.legend()
+    plt.xlabel('Epoch'), plt.ylabel('NLL')
+    plt.show()
+
 
 class ProLSTM(nn.Module):
     def __init__(self, lstm_layers = 1, lstm_hidden_size = 64, embedding_dim = 16, batch_size = 10, vocab_size = 30, clans = 10, families = 100): #1024
@@ -126,30 +179,27 @@ class ProGRU(nn.Module):
         )
         self.gru = nn.GRU(
             input_size = self.embedding_dim,
-            hidden_size = self.lstm_hidden_size,
-            num_layers = self.lstm_layers,
+            hidden_size = self.gru_hidden_size,
+            num_layers = self.gru_layers,
             batch_first = True
         )
         self.ff = nn.Linear(
-            in_features = self.lstm_hidden_size,
+            in_features = self.gru_hidden_size,
             out_features = self.vocab_size
         )
 
     def init_hidden(self):
         # Random initialization of hidden state
-        hidden_a = torch.randn(self.gru_layers, self.batch_size, self.gru_hidden_size)
-        hidden_b = torch.randn(self.gru_layers, self.batch_size, self.gru_hidden_size)
+        hidden = torch.randn(self.gru_layers, self.batch_size, self.gru_hidden_size)
 
         # If the network is on the GPU, move the hidden state to the GPU as well
         if torch.cuda.is_available():
-            hidden_a = hidden_a.cuda()
-            hidden_b = hidden_b.cuda()
+            hidden = hidden.cuda()
         
         # Wrap hidden state in variables
-        hidden_a = Variable(hidden_a)
-        hidden_b = Variable(hidden_b)
+        hidden = Variable(hidden)
 
-        return (hidden_a, hidden_b)
+        return hidden
 
     def forward(self, X, X_lengths):
         self.hidden = self.init_hidden()
