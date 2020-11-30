@@ -34,7 +34,29 @@ def plex_loss(Y_hat, Y, X_lengths):
     return torch.exp(nll_loss(Y_hat, Y, X_lengths))
 
 # Training loop
-def train(net, loader, vocab_size = 30, criterion = nll_loss, epochs = 500):
+def train(net, loader, use_pretrained = None, keep_training = False, vocab_size = 30, criterion = nll_loss, epochs = 500):
+    """
+    Trains a net with the given data or fetches a pretrained model
+
+    Args:
+     `net`: the model to train
+     `loader`: a DataLoader object
+     `use_pretrained`: one of None or a path to a pretrained model
+     `keep_training`: if True, the pretrained model will be further trained, otherwise the pretrained model will be returned
+     `vocab_size`: size of the output vocabulary, default 30
+     `criterion`: the loss function, default nll_loss
+     `epochs`: the number of epochs to train for, default 500
+
+    Returns a trained model
+    """
+    if use_pretrained is not None:
+        if type(use_pretrained) == str:
+            net.load_state_dict(torch.load(use_pretrained))
+            if not keep_training:
+                return net
+        else:
+            raise ValueError("Expected use_pretrained to be one of None or str")
+
     optimizer = optim.Adam(net.parameters(), lr=0.00086)
 
     # For tracking intermediate values
@@ -72,14 +94,15 @@ def train(net, loader, vocab_size = 30, criterion = nll_loss, epochs = 500):
         # Print loss every epoch
         print(f'Epoch {i}, training loss: {training_loss[-1]}')
 
-    ## Plot training and validation loss
+    # Plot training and validation loss
     epoch = np.arange(len(training_loss))
     plt.figure()
     plt.plot(epoch, training_loss, 'r', label='Training loss',)
-    #plt.plot(epoch, validation_loss, 'b', label='Validation loss')
     plt.legend()
     plt.xlabel('Epoch'), plt.ylabel('NLL')
     plt.show()
+
+    return net
 
 
 class ProLSTM(nn.Module):
