@@ -92,12 +92,13 @@ def train(net, loader, use_pretrained = None, keep_training = False, vocab_size 
         training_loss.append(epoch_training_loss / len(loader))
 
         # Print loss every epoch
-        print(f'Epoch {i}, training loss: {training_loss[-1]}')
+        print(f'Epoch {i}, training loss: {training_loss[-1]}, Perplexity Loss: {np.exp(training_loss[-1])}')
 
     # Plot training and validation loss
     epoch = np.arange(len(training_loss))
     plt.figure()
     plt.plot(epoch, training_loss, 'r', label='Training loss',)
+    plt.plot(epoch, np.exp(training_loss), 'r', label='Perplexity loss',)
     plt.legend()
     plt.xlabel('Epoch'), plt.ylabel('NLL')
     plt.show()
