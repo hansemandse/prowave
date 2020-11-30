@@ -1,3 +1,4 @@
+import math
 import numpy as np
 from functools import reduce
 import torch
@@ -58,6 +59,7 @@ def train(net, loader, use_pretrained = None, keep_training = False, vocab_size 
             raise ValueError("Expected use_pretrained to be one of None or str")
 
     optimizer = optim.Adam(net.parameters(), lr=0.00086)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, 1, 0.95)
 
     # For tracking intermediate values
     training_loss = []
@@ -268,6 +270,56 @@ class ProGRU(nn.Module):
                             
         return X
 
+# The following is modified from https://pytorch.org/tutorials/beginner/transformer_tutorial.html
+class ProTrans(nn.Module):
+    def __init__(self, nintoken, nouttoken, ninp, nhead, nhid, nlayers, dropout=0.5):
+        super(ProTrans, self).__init__()
+        from torch.nn import TransformerEncoder, TransformerEncoderLayer
+        self.model_type = 'Transformer'
+        self.pos_encoder = PositionalEncoding(ninp, dropout)
+        encoder_layers = TransformerEncoderLayer(ninp, nhead, nhid, dropout)
+        self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
+        self.encoder = nn.Embedding(nintoken, ninp)
+        self.ninp = ninp
+        self.decoder = nn.Linear(ninp, nouttoken)
+
+        self.init_weights()
+
+    def generate_square_subsequent_mask(self, sz):
+        mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
+        mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
+        return mask
+
+    def init_weights(self):
+        initrange = 0.1
+        self.encoder.weight.data.uniform_(-initrange, initrange)
+        self.decoder.bias.data.zero_()
+        self.decoder.weight.data.uniform_(-initrange, initrange)
+
+    def forward(self, src, src_mask):
+        src = self.encoder(src) * math.sqrt(self.ninp)
+        src = self.pos_encoder(src)
+        output = self.transformer_encoder(src, src_mask)
+        output = self.decoder(output)
+        return output
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, dropout=0.1, max_len=5000):
+        super(PositionalEncoding, self).__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0).transpose(0, 1)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        x = x + self.pe[:x.size(0), :]
+        return self.dropout(x)
+
 # The following is modified from https://github.com/Dankrushen/Wavenet-PyTorch
 class ProWaveNet(nn.Module):
     def __init__(self, 
@@ -422,3 +474,46 @@ class GatedResidualBlock(nn.Module):
         skip_cut = skip.shape[-1] - self.output_width
         skip = skip.narrow(-1, skip_cut, self.output_width)
         return residual, skip
+
+class Generator(object):
+    def __init__(self, model, dataset):
+        self.model = model
+        self.dataset = dataset
+
+    def _shift_insert(self, x, y):
+        x = x.narrow(-1, y.shape[-1], x.shape[-1] - y.shape[-1])
+        dims = [1] * len(x.shape)
+        dims[-1] = y.shape[-1]
+        y = y.reshape(dims)
+        return torch.cat([x, self.dataset._to_tensor(y)], -1)
+
+    def tensor2numpy(self, x):
+        return x.data.numpy()
+
+    def predict(self, x):
+        x = x.to(self.model.device)
+        self.model.to(self.model.device)
+        return self.model(x)
+
+    def run(self, x, num_samples, disp_interval=None):
+        x = self.dataset._to_tensor(self.dataset.preprocess(x))
+        x = torch.unsqueeze(x, 0)
+
+        y_len = self.dataset.y_len
+        out = np.zeros((num_samples // y_len + 1) * y_len)
+        n_predicted = 0
+        for i in range(num_samples // y_len + 1):
+            if disp_interval is not None and i % disp_interval == 0:
+                print('Sample {} / {}'.format(i * y_len, num_samples))
+
+            y_i = self.tensor2numpy(self.predict(x).cpu())
+            y_i = self.dataset.label2value(y_i.argmax(axis=1))[0]
+            y_decoded = self.dataset.encoder.decode(y_i)
+
+            out[n_predicted:n_predicted + len(y_decoded)] = y_decoded
+            n_predicted += len(y_decoded)
+
+            # shift sequence and insert generated value
+            x = self._shift_insert(x, y_i)
+
+        return out[0:num_samples]
