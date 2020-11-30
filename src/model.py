@@ -35,7 +35,7 @@ def plex_loss(Y_hat, Y, X_lengths):
 
 # Training loop
 def train(net, loader, vocab_size = 30, criterion = nll_loss, epochs = 500):
-    optimizer = optim.Adam(net.parameters(), lr=0.002)
+    optimizer = optim.Adam(net.parameters(), lr=0.00086)
 
     # For tracking intermediate values
     training_loss = []
@@ -73,9 +73,9 @@ def train(net, loader, vocab_size = 30, criterion = nll_loss, epochs = 500):
         print(f'Epoch {i}, training loss: {training_loss[-1]}')
 
     ## Plot training and validation loss
-    #epoch = np.arange(len(training_loss))
+    epoch = np.arange(len(training_loss))
     plt.figure()
-    plt.plot(i, training_loss, 'r', label='Training loss',)
+    plt.plot(epoch, training_loss, 'r', label='Training loss',)
     #plt.plot(epoch, validation_loss, 'b', label='Validation loss')
     plt.legend()
     plt.xlabel('Epoch'), plt.ylabel('NLL')
@@ -83,7 +83,7 @@ def train(net, loader, vocab_size = 30, criterion = nll_loss, epochs = 500):
 
 
 class ProLSTM(nn.Module):
-    def __init__(self, lstm_layers = 1, lstm_hidden_size = 64, embedding_dim = 16, batch_size = 10, vocab_size = 30, clans = 10, families = 100): #1024
+    def __init__(self, lstm_layers = 1, lstm_hidden_size = 128, embedding_dim = 32, batch_size = 10, vocab_size = 30, clans = 10, families = 100): #1024
         super(ProLSTM, self).__init__()
 
         # Store values in this object
@@ -161,7 +161,7 @@ class ProLSTM(nn.Module):
         return X
 
 class ProGRU(nn.Module):
-    def __init__(self, gru_layers = 1, gru_hidden_size = 64, embedding_dim = 16, batch_size = 10, vocab_size = 30, clans = 10, families = 100): #1024
+    def __init__(self, gru_layers = 1, gru_hidden_size = 128, embedding_dim = 32, batch_size = 10, vocab_size = 30, clans = 10, families = 100): #1024
         super(ProGRU, self).__init__()
 
         # Store values in this object
@@ -214,14 +214,15 @@ class ProGRU(nn.Module):
         # Run through network
         X_GRU = nn.utils.rnn.pack_padded_sequence(X, X_lengths, batch_first = True, enforce_sorted = False) # This is set to make sure a not sorted sequence of lenghts is given.
         X_GRU, self.hidden = self.gru(X_GRU, self.hidden)
-        X_GRU, _ = nn.utils.rnn.pad_packed_sequence(X_GRU, batch_first = True, padding_value = 0)
+        X_GRU, _ = nn.utils.rnn.pad_packed_sequence(X_GRU, batch_first = True, padding_value = 0, total_length = 514)
         
         # Make sure the padding is correct for the output - Batchsize - Sequence - LSTM Hidden
         # Batch Size, Max Seq in batch, LSTM Hidden - Padding such that it is Batch Size, Seqlen , LSTM Hidden
         # We need to add some Extra Padding Here
         X = X_GRU
+        _, seq_len, _ = X.size()
         
-        X = X.view(batch_size, seq_len, self.gru_hidden_size)
+        #X = X.view(batch_size, seq_len, self.gru_hidden_size)
         
         # Run through linear layer
         X = X.contiguous()
