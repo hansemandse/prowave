@@ -10,13 +10,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 sns.set_style('whitegrid')
 
-# Negative log-likelihood loss
+# Negative log-likelihood loss from https://towardsdatascience.com/taming-lstms-variable-sized-mini-batches-and-why-pytorch-is-good-for-your-health-61d35642972e
 def nll_loss(Y_hat, Y, vocab_size):
-    
-    # Remove the padding
-    #Y = nn.utils.rnn.pack_padded_sequence(torch.squeeze(Y), lengths, batch_first = True, enforce_sorted = False) # This is set to make sure a not sorted sequence of lenghts is given.
-    #Y, _ = nn.utils.rnn.pad_packed_sequence(Y, batch_first = True)
-    
     # Flatten sequences within a batch
     Y = Y.view(-1)
     Y_hat = Y_hat.view(-1, vocab_size)
@@ -69,18 +64,24 @@ def train(net, loader, use_pretrained = None, keep_training = False, vocab_size 
     for i in range(epochs):
         epoch_training_loss = 0
 
-        # For each sentence in training set
+        # For each batch in training set
         for inputs, targets in loader:
-
-            # To calculate forward pass, we must calculate the original sequence lengths of the
-            # input tensors without padding characters
-            input_lengths = [sum(k > 0) for k in inputs] 
-            target_lengths = [sum(l > 0) for l in targets] # Skip the Clan and Family ID by using the targets
 
             # Forward pass
             optimizer.zero_grad()
 
-            output = net(inputs, torch.tensor(input_lengths))
+            if type(net) == ProLSTM or type(net) == ProGRU:
+                # To calculate forward pass, we must calculate the original sequence lengths of the
+                # input tensors without padding characters
+                input_lengths = [sum(k > 0) for k in inputs] 
+                output = net(inputs, torch.tensor(input_lengths))
+            elif type(net) == ProTrans:
+                # To calculate forward pass, we must calculate a mask for the source input
+                src_mask = net.generate_square_subsequent_mask(inputs.size(1))
+                output = net(inputs, src_mask)
+                targets = targets.T.contiguous()
+            print(output.shape)
+            print(targets.shape)
             batch_loss = criterion(output, targets, vocab_size)
 
             # Back-propagation and weight update
@@ -88,7 +89,7 @@ def train(net, loader, use_pretrained = None, keep_training = False, vocab_size 
             optimizer.step() 
 
             # Update loss
-            epoch_training_loss += batch_loss.detach().numpy()
+            epoch_training_loss += batch_loss.item()
 
         # Save loss for plot
         training_loss.append(epoch_training_loss / len(loader))
@@ -107,6 +108,31 @@ def train(net, loader, use_pretrained = None, keep_training = False, vocab_size 
 
     return net
 
+# Evaluation
+def evaluate(net, loader, criterion = plex_loss, vocab_size = 30):
+    """
+    Evaluates a net on the given test data
+
+    Args:
+     `net`: the model to evaluate
+     `loader`: a Dataloader object
+    
+    Returns total loss on the test data
+    """
+    # First, set the network into evaluation mode
+    net.eval()
+    total_loss = 0
+    with torch.no_grad():
+        for inputs, targets in loader:
+            if type(net) == ProLSTM or type(net) == ProGRU:
+                input_lengths = [sum(k > 0) for k in inputs] 
+                output = net(inputs, torch.tensor(input_lengths))
+            elif type(net) == ProTrans:
+                src_mask = net.generate_square_subsequent_mask(inputs.size(1))
+                output = net(inputs, src_mask)
+            batch_loss = criterion(output, targets, vocab_size)
+            total_loss += batch_loss
+    return total_loss
 
 class ProLSTM(nn.Module):
     def __init__(self, lstm_layers = 1, lstm_hidden_size = 256, embedding_dim = 32, batch_size = 50, vocab_size = 30, clans = 10, families = 100): #1024
@@ -297,11 +323,11 @@ class ProTrans(nn.Module):
         self.decoder.weight.data.uniform_(-initrange, initrange)
 
     def forward(self, src, src_mask):
-        src = self.encoder(src) * math.sqrt(self.ninp)
+        src = self.encoder(src.T) * math.sqrt(self.ninp)
         src = self.pos_encoder(src)
         output = self.transformer_encoder(src, src_mask)
         output = self.decoder(output)
-        return output
+        return F.softmax(output, dim=2)
 
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model, dropout=0.1, max_len=5000):
