@@ -217,7 +217,7 @@ class ProLSTM(nn.Module):
         return X
 
 class ProGRU(nn.Module):
-    def __init__(self, gru_layers = 1, gru_hidden_size = 256, embedding_dim = 32, batch_size = 50, vocab_size = 30, clans = 10, families = 100): #1024
+    def __init__(self, gru_layers = 1, gru_hidden_size = 400, embedding_dim = 32, batch_size = 50, vocab_size = 30, clans = 10, families = 100): #1024
         super(ProGRU, self).__init__()
 
         # Store values in this object
