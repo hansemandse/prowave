@@ -106,7 +106,7 @@ def train(net, loader, use_pretrained = None, keep_training = False, vocab_size 
 
 
 class ProLSTM(nn.Module):
-    def __init__(self, lstm_layers = 1, lstm_hidden_size = 128, embedding_dim = 32, batch_size = 10, vocab_size = 30, clans = 10, families = 100): #1024
+    def __init__(self, lstm_layers = 1, lstm_hidden_size = 256, embedding_dim = 32, batch_size = 50, vocab_size = 30, clans = 10, families = 100): #1024
         super(ProLSTM, self).__init__()
 
         # Store values in this object
@@ -135,6 +135,7 @@ class ProLSTM(nn.Module):
             in_features = self.lstm_hidden_size,
             out_features = self.vocab_size
         )
+        self.DropOut = nn.Dropout(p=0.2)
 
     def init_hidden(self):
         # Random initialization of hidden state
@@ -170,6 +171,9 @@ class ProLSTM(nn.Module):
         X = X_LSTM
         _, seq_len, _ = X.size()
         
+        # Add Dropout  - 20 % 
+        X = self.DropOut(X)
+        
         #X = X.view(batch_size, seq_len, self.lstm_hidden_size)
         
         # Run through linear layer
@@ -184,7 +188,7 @@ class ProLSTM(nn.Module):
         return X
 
 class ProGRU(nn.Module):
-    def __init__(self, gru_layers = 1, gru_hidden_size = 128, embedding_dim = 32, batch_size = 10, vocab_size = 30, clans = 10, families = 100): #1024
+    def __init__(self, gru_layers = 1, gru_hidden_size = 256, embedding_dim = 32, batch_size = 50, vocab_size = 30, clans = 10, families = 100): #1024
         super(ProGRU, self).__init__()
 
         # Store values in this object
@@ -213,6 +217,8 @@ class ProGRU(nn.Module):
             in_features = self.gru_hidden_size,
             out_features = self.vocab_size
         )
+        
+        self.DropOut = nn.Dropout(p=0.2)
 
     def init_hidden(self):
         # Random initialization of hidden state
@@ -246,6 +252,9 @@ class ProGRU(nn.Module):
         _, seq_len, _ = X.size()
         
         #X = X.view(batch_size, seq_len, self.gru_hidden_size)
+        
+        # Add Dropout  - 20 % 
+        X = self.DropOut(X)
         
         # Run through linear layer
         X = X.contiguous()
