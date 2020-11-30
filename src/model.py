@@ -30,13 +30,14 @@ def plex_loss(Y_hat, Y, X_lengths):
     return torch.exp(nll_loss(Y_hat, Y, X_lengths))
 
 # Training loop
-def train(net, loader, use_pretrained = None, keep_training = False, vocab_size = 30, criterion = nll_loss, epochs = 500):
+def train(net, train_loader, valid_loader, use_pretrained = None, keep_training = False, vocab_size = 30, criterion = nll_loss, epochs = 500):
     """
     Trains a net with the given data or fetches a pretrained model
 
     Args:
      `net`: the model to train
-     `loader`: a DataLoader object
+     `train_loader`: a DataLoader object with training data
+     `valid_loader`: a DataLoader object with validation data
      `use_pretrained`: one of None or a path to a pretrained model
      `keep_training`: if True, the pretrained model will be further trained, otherwise the pretrained model will be returned
      `vocab_size`: size of the output vocabulary, default 30
@@ -58,18 +59,24 @@ def train(net, loader, use_pretrained = None, keep_training = False, vocab_size 
 
     # For tracking intermediate values
     training_loss = []
+    validation_loss = []
+    
+    # If CUDA is available, move net to GPU
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    net = net.to(device)
 
     # Training loop - first set the network into training mode
-    net.train()
     for i in range(epochs):
+        # Validate network
+        validation_loss.append(evaluate(net, valid_loader))
+        
+        # Train network
+        net.train()
         epoch_training_loss = 0
-
-        # For each batch in training set
-        for inputs, targets in loader:
-
+        for inputs, targets in train_loader:
             # Forward pass
             optimizer.zero_grad()
-
+            inputs.to(device)
             if type(net) == ProLSTM or type(net) == ProGRU:
                 # To calculate forward pass, we must calculate the original sequence lengths of the
                 # input tensors without padding characters
@@ -80,8 +87,7 @@ def train(net, loader, use_pretrained = None, keep_training = False, vocab_size 
                 src_mask = net.generate_square_subsequent_mask(inputs.size(1))
                 output = net(inputs, src_mask)
                 targets = targets.T.contiguous()
-            print(output.shape)
-            print(targets.shape)
+            output.to(device)
             batch_loss = criterion(output, targets, vocab_size)
 
             # Back-propagation and weight update
@@ -92,7 +98,7 @@ def train(net, loader, use_pretrained = None, keep_training = False, vocab_size 
             epoch_training_loss += batch_loss.item()
 
         # Save loss for plot
-        training_loss.append(epoch_training_loss / len(loader))
+        training_loss.append(epoch_training_loss / len(train_loader))
 
         # Print loss every epoch
         print(f'Epoch {i}, training loss: {training_loss[-1]}, Perplexity Loss: {np.exp(training_loss[-1])}')
@@ -106,7 +112,7 @@ def train(net, loader, use_pretrained = None, keep_training = False, vocab_size 
     plt.xlabel('Epoch'), plt.ylabel('NLL')
     plt.show()
 
-    return net
+    return net.cpu()
 
 # Evaluation
 def evaluate(net, loader, criterion = plex_loss, vocab_size = 30):
@@ -132,7 +138,7 @@ def evaluate(net, loader, criterion = plex_loss, vocab_size = 30):
                 output = net(inputs, src_mask)
             batch_loss = criterion(output, targets, vocab_size)
             total_loss += batch_loss
-    return total_loss
+    return total_loss / len(loader)
 
 class ProLSTM(nn.Module):
     def __init__(self, lstm_layers = 1, lstm_hidden_size = 256, embedding_dim = 32, batch_size = 50, vocab_size = 30, clans = 10, families = 100): #1024
@@ -217,7 +223,7 @@ class ProLSTM(nn.Module):
         return X
 
 class ProGRU(nn.Module):
-    def __init__(self, gru_layers = 1, gru_hidden_size = 400, embedding_dim = 32, batch_size = 50, vocab_size = 30, clans = 10, families = 100): #1024
+    def __init__(self, gru_layers = 1, gru_hidden_size = 288, embedding_dim = 32, batch_size = 50, vocab_size = 30, clans = 10, families = 100): #1024
         super(ProGRU, self).__init__()
 
         # Store values in this object
