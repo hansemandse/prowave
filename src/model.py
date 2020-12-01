@@ -361,7 +361,10 @@ class ProWaveNet(nn.Module):
                  num_blocks   = 2,
                  num_layers   = 14,
                  num_hidden   = 128,
-                 kernel_size  = 2):
+                 kernel_size  = 2,
+                 vocab_size = 30,
+                 clans = 10,
+                 families = 100):
         super(ProWaveNet, self).__init__()
         self.num_time_samples = num_time_samples
         self.num_channels = num_channels
@@ -404,10 +407,32 @@ class ProWaveNet(nn.Module):
         self.conv_1_1 = nn.Conv1d(num_hidden, num_hidden, 1)
         self.relu_2 = nn.ReLU()
         self.conv_1_2 = nn.Conv1d(num_hidden, num_hidden, 1)
-        self.h_class = nn.Conv1d(num_hidden, num_classes, 2)
+        # For the number of classes we might just do an FFNN instead - this way we get the dimension we need
+        self.h_class = nn.Conv1d(num_hidden, num_classes, 1) # Had Kernel Size 2 before        
+        # Embedding
+        self.embedding_dim = 30
+        
+        # Calculate total vocabulary size
+        self.vocab_size = vocab_size
+        self.total_size = vocab_size + clans + families
+
+        # Build the network
+        self.embed = nn.Embedding(
+            num_embeddings = self.total_size,
+            embedding_dim = self.embedding_dim,
+            padding_idx = 0 # constant zero padding index
+        )
+        
+        
 
     def forward(self, x):
         skips = []
+        x = self.embed(x)
+        # Permute the imput to have the dimension [Batch x Channel x Len] - here the channels are the same as number of tokens/embeddings
+        x = x.permute(0, 2, 1)
+        
+        #print("Shape of X:", x.shape )
+        
         for layer, batch_norm in zip(self.hs, self.batch_norms):
             x, skip = layer(x)
             x = batch_norm(x)
@@ -416,7 +441,11 @@ class ProWaveNet(nn.Module):
         x = reduce((lambda a, b : torch.add(a, b)), skips)
         x = self.relu_1(self.conv_1_1(x))
         x = self.relu_2(self.conv_1_2(x))
-        return self.h_class(x)
+
+        x = self.h_class(x)
+
+        # Take Softmax on the output - the signal is permuted therefore dimension 1
+        return F.log_softmax(x, dim = 1)
 
     def set_device(self, device=None):
         if device is None:
@@ -424,7 +453,7 @@ class ProWaveNet(nn.Module):
         else:
             self.device = device
 
-    def train(self, dataloader, num_epochs=25, validation=False, disp_interval=None):
+    def train(self, dataloader, num_epochs=25, validation=False, disp_interval=None, vocab_size = 30):
         self.to(self.device)
 
         if validation:
@@ -453,15 +482,17 @@ class ProWaveNet(nn.Module):
                 # track history only during training phase
                 with torch.set_grad_enabled(not validation):
                     outputs = self(inputs)
-                    loss = self.criterion(outputs, labels)
+                    loss = self.criterion(outputs, labels, vocab_size)
                     
                     if not validation:
                         loss.backward()
                         self.optimizer.step()
                         
-                running_loss += loss.item() * inputs.size(1)
+                running_loss += loss.item()
 
-            losses.append(running_loss)
+
+            losses.append(running_loss / len(dataloader))
+            
             if disp_interval is not None and epoch % disp_interval == 0:
                 epoch_loss = running_loss / len(dataloader)
                 print('Epoch {} / {}'.format(epoch, num_epochs))
@@ -469,6 +500,13 @@ class ProWaveNet(nn.Module):
                 print('{} Loss: {}'.format(phase, epoch_loss))
                 print('-' * 10)
                 print()
+        # Plot training
+        epochtotal = np.arange(len(losses))
+        plt.figure()
+        plt.plot(epochtotal, losses, 'r', label='Training loss',)
+        plt.legend()
+        plt.xlabel('Epoch'), plt.ylabel('NLL')
+        plt.show()    
 
 class GatedConv1d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, 
