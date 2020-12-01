@@ -333,7 +333,7 @@ class ProTrans(nn.Module):
         src = self.pos_encoder(src)
         output = self.transformer_encoder(src, src_mask)
         output = self.decoder(output)
-        return F.softmax(output, dim=2)
+        return F.log_softmax(output, dim=2)
 
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model, dropout=0.1, max_len=5000):
