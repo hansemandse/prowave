@@ -54,8 +54,8 @@ def train(net, train_loader, valid_loader, use_pretrained = None, keep_training 
         else:
             raise ValueError("Expected use_pretrained to be one of None or str")
 
-    optimizer = optim.Adam(net.parameters(), lr=0.00086)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, 1, 0.95)
+    optimizer = optim.Adam(net.parameters(), lr=0.002)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size = 10, gamma = 0.5)
 
     # For tracking intermediate values
     training_loss = []
@@ -73,6 +73,8 @@ def train(net, train_loader, valid_loader, use_pretrained = None, keep_training 
         # Train network
         net.train()
         epoch_training_loss = 0
+        
+        # Start Training
         for inputs, targets in train_loader:
             # Forward pass
             optimizer.zero_grad()
@@ -97,17 +99,23 @@ def train(net, train_loader, valid_loader, use_pretrained = None, keep_training 
             # Update loss
             epoch_training_loss += batch_loss.item()
 
+        # Step the scheduler
+        scheduler.step()
+        
         # Save loss for plot
         training_loss.append(epoch_training_loss / len(train_loader))
 
         # Print loss every epoch
-        print(f'Epoch {i}, training loss: {training_loss[-1]}, Perplexity Loss: {np.exp(training_loss[-1])}')
+        print(f'Epoch {i}, training loss: {training_loss[-1]}, Validation Perplexity Loss: {(validation_loss[-1])}')
+        
+        # Print the Learning Rate Being Used
+        print('Learning Rate: {}'.format(scheduler.get_lr()))
 
     # Plot training and validation loss
     epoch = np.arange(len(training_loss))
-    plt.figure()
+    plt.figure(figsize=(10,5))
     plt.plot(epoch, training_loss, 'r', label='Training loss',)
-    plt.plot(epoch, np.exp(training_loss), 'r', label='Perplexity loss',)
+    plt.plot(epoch, validation_loss, 'b', label='Validation Perplexity loss',)
     plt.legend()
     plt.xlabel('Epoch'), plt.ylabel('NLL')
     plt.show()
@@ -136,8 +144,11 @@ def evaluate(net, loader, criterion = plex_loss, vocab_size = 30):
             elif type(net) == ProTrans:
                 src_mask = net.generate_square_subsequent_mask(inputs.size(1))
                 output = net(inputs, src_mask)
+            else: # For the WaveNet do this:
+                input_lengths = [sum(k > 0) for k in inputs] 
+                output = net(inputs)
             batch_loss = criterion(output, targets, vocab_size)
-            total_loss += batch_loss
+            total_loss += batch_loss.item()
     return total_loss / len(loader)
 
 class ProLSTM(nn.Module):
@@ -376,8 +387,8 @@ class ProWaveNet(nn.Module):
         self.receptive_field = 1 + (kernel_size - 1) * \
                                num_blocks * sum([2**k for k in range(num_layers)])
         self.output_width = num_time_samples - self.receptive_field + 1
-        print('receptive_field: {}'.format(self.receptive_field))
-        print('Output width: {}'.format(self.output_width))
+        #print('receptive_field: {}'.format(self.receptive_field))
+        #print('Output width: {}'.format(self.output_width))
         
         self.set_device()
 
@@ -453,7 +464,7 @@ class ProWaveNet(nn.Module):
         else:
             self.device = device
 
-    def train(self, dataloader, num_epochs=25, validation=False, disp_interval=None, vocab_size = 30):
+    def train_WaveNet(self, dataloader, valid_loader, num_epochs=25, validation=False, disp_interval=None, vocab_size = 30):
         self.to(self.device)
 
         if validation:
@@ -462,9 +473,13 @@ class ProWaveNet(nn.Module):
             phase = 'Training'
 
         losses = []
+        validation_loss = []
         for epoch in range(1, num_epochs + 1):
+            
+            # Validate network
+            validation_loss.append(evaluate(self, valid_loader))
+            
             if not validation:
-                self.scheduler.step()
                 super().train()
             else:
                 self.eval()
@@ -491,19 +506,20 @@ class ProWaveNet(nn.Module):
                 running_loss += loss.item()
 
 
+            # Step The Scheduler
+            self.scheduler.step()
+            
             losses.append(running_loss / len(dataloader))
             
             if disp_interval is not None and epoch % disp_interval == 0:
                 epoch_loss = running_loss / len(dataloader)
-                print('Epoch {} / {}'.format(epoch, num_epochs))
+                print(f'Epoch {epoch}, training loss: {losses[-1]}, Validation Perplexity Loss: {(validation_loss[-1])}')
                 print('Learning Rate: {}'.format(self.scheduler.get_lr()))
-                print('{} Loss: {}'.format(phase, epoch_loss))
-                print('-' * 10)
-                print()
-        # Plot training
+  
         epochtotal = np.arange(len(losses))
-        plt.figure()
+        plt.figure(figsize=(10,5))
         plt.plot(epochtotal, losses, 'r', label='Training loss',)
+        plt.plot(epochtotal, validation_loss, 'b', label='Validation Perplexity Loss',)
         plt.legend()
         plt.xlabel('Epoch'), plt.ylabel('NLL')
         plt.show()    
