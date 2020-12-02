@@ -55,7 +55,7 @@ def train(net, train_loader, valid_loader, use_pretrained = None, keep_training 
             raise ValueError("Expected use_pretrained to be one of None or str")
 
     optimizer = optim.Adam(net.parameters(), lr=0.002)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size = 10, gamma = 0.5)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size = 5, gamma = 0.5)
 
     # For tracking intermediate values
     training_loss = []
