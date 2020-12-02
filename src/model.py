@@ -10,6 +10,16 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 sns.set_style('whitegrid')
 
+# Get a new filename for a results file
+def get_next_file():
+    from os import walk
+    files = []
+    for _, _, filenames in walk('./results/'):
+        files.extend(filenames)
+    fileNum = 0 if len(files) == 0 else max(map(lambda x: int(x[3:x.find('.')]), files)) + 1
+    fileName = f'./results/run{fileNum}.csv'
+    return fileName
+
 # Negative log-likelihood loss from https://towardsdatascience.com/taming-lstms-variable-sized-mini-batches-and-why-pytorch-is-good-for-your-health-61d35642972e
 def nll_loss(Y_hat, Y, vocab_size):
     # Flatten sequences within a batch
@@ -54,73 +64,93 @@ def train(net, train_loader, valid_loader, use_pretrained = None, keep_training 
         else:
             raise ValueError("Expected use_pretrained to be one of None or str")
 
-    optimizer = optim.Adam(net.parameters(), lr=0.002)
+    lr = 0.001
+    optimizer = optim.Adam(net.parameters(), lr=lr)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size = 5, gamma = 0.5)
 
-    # For tracking intermediate values
-    training_loss = []
-    validation_loss = []
-    
-    # If CUDA is available, move net to GPU
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    net = net.to(device)
+    # Open a file to write results to
+    fileName = get_next_file()
+    with open(fileName, 'w') as f:
+        f.write(f'#conf:{net.name}_{epochs}epochs_{lr}lr_{len(train_loader)}trainsize_{len(valid_loader)}validsize\n')
+        f.write('Epoch;Train_loss;Valid_loss\n')
+        f.flush()
 
-    # Training loop - first set the network into training mode
-    for i in range(epochs):
-        # Validate network
-        validation_loss.append(evaluate(net, valid_loader))
-        
-        # Train network
-        net.train()
-        epoch_training_loss = 0
-        
-        # Start Training
-        for inputs, targets in train_loader:
-            # Forward pass
-            optimizer.zero_grad()
-            inputs.to(device)
-            if type(net) == ProLSTM or type(net) == ProGRU:
-                # To calculate forward pass, we must calculate the original sequence lengths of the
-                # input tensors without padding characters
-                input_lengths = [sum(k > 0) for k in inputs] 
-                output = net(inputs, torch.tensor(input_lengths))
-            elif type(net) == ProTrans:
-                # To calculate forward pass, we must calculate a mask for the source input
-                src_mask = net.generate_square_subsequent_mask(inputs.size(1))
-                output = net(inputs, src_mask)
-                targets = targets.T.contiguous()
-            output.to(device)
-            batch_loss = criterion(output, targets, vocab_size)
+        # For tracking intermediate values
+        training_loss = []
+        validation_loss = []
 
-            # Back-propagation and weight update
-            batch_loss.backward()
-            optimizer.step() 
+        # For checkpointing
+        best_net, best_valid_loss = net, float('inf')
 
-            # Update loss
-            epoch_training_loss += batch_loss.item()
+        # If CUDA is available, move net to GPU
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        net = net.to(device)
 
-        # Step the scheduler
-        scheduler.step()
-        
-        # Save loss for plot
-        training_loss.append(epoch_training_loss / len(train_loader))
+        # Training loop - first set the network into training mode
+        for i in range(1, epochs+1):
+            # Validate network
+            validation_loss.append(evaluate(net, valid_loader))
 
-        # Print loss every epoch
-        print(f'Epoch {i}, training loss: {training_loss[-1]}, Validation Perplexity Loss: {(validation_loss[-1])}')
-        
-        # Print the Learning Rate Being Used
-        print('Learning Rate: {}'.format(scheduler.get_lr()))
+            # Checkpoint if better than before
+            if validation_loss[-1] < best_valid_loss:
+                best_valid_loss = validation_loss[-1]
+                best_net = net
 
-    # Plot training and validation loss
-    epoch = np.arange(len(training_loss))
-    plt.figure(figsize=(10,5))
-    plt.plot(epoch, training_loss, 'r', label='Training loss',)
-    plt.plot(epoch, validation_loss, 'b', label='Validation Perplexity loss',)
-    plt.legend()
-    plt.xlabel('Epoch'), plt.ylabel('NLL')
-    plt.show()
+            # Train network
+            net.train()
+            epoch_training_loss = 0
 
-    return net.cpu()
+            # Start Training
+            for inputs, targets in train_loader:
+                # Forward pass
+                optimizer.zero_grad()
+                inputs.to(device)
+                if type(net) == ProLSTM or type(net) == ProGRU:
+                    # To calculate forward pass, we must calculate the original sequence lengths of the
+                    # input tensors without padding characters
+                    input_lengths = [sum(k > 0) for k in inputs] 
+                    output = net(inputs, torch.tensor(input_lengths))
+                elif type(net) == ProTrans:
+                    # To calculate forward pass, we must calculate a mask for the source input
+                    src_mask = net.generate_square_subsequent_mask(inputs.size(1))
+                    output = net(inputs, src_mask)
+                    targets = targets.T.contiguous()
+                output.to(device)
+                batch_loss = criterion(output, targets, vocab_size)
+
+                # Back-propagation and weight update
+                batch_loss.backward()
+                optimizer.step() 
+
+                # Update loss
+                epoch_training_loss += batch_loss.item()
+
+            # Step the scheduler
+            scheduler.step()
+
+            # Save loss for plot
+            training_loss.append(epoch_training_loss / len(train_loader))
+
+            # Print loss every epoch
+            print(f'Epoch {i}, training loss: {training_loss[-1]}, Validation Perplexity Loss: {(validation_loss[-1])}')
+
+            # Print the Learning Rate Being Used
+            print('Learning Rate: {}'.format(scheduler.get_lr()))
+
+            # Update file
+            f.write(f'{i};{training_loss[-1]:.5f};{validation_loss[-1]:.5f}\n')
+            f.flush()
+
+        # Plot training and validation loss
+        epoch = np.arange(len(training_loss))
+        plt.figure(figsize=(10,5))
+        plt.plot(epoch, training_loss, 'r', label='Training loss',)
+        plt.plot(epoch, validation_loss, 'b', label='Validation Perplexity loss',)
+        plt.legend()
+        plt.xlabel('Epoch'), plt.ylabel('NLL')
+        plt.show()
+
+    return best_net.cpu()
 
 # Evaluation
 def evaluate(net, loader, criterion = plex_loss, vocab_size = 30):
@@ -145,8 +175,8 @@ def evaluate(net, loader, criterion = plex_loss, vocab_size = 30):
                 src_mask = net.generate_square_subsequent_mask(inputs.size(1))
                 output = net(inputs, src_mask)
             else: # For the WaveNet do this:
-                input_lengths = [sum(k > 0) for k in inputs] 
                 output = net(inputs)
+            output.cpu()
             batch_loss = criterion(output, targets, vocab_size)
             total_loss += batch_loss.item()
     return total_loss / len(loader)
@@ -154,6 +184,7 @@ def evaluate(net, loader, criterion = plex_loss, vocab_size = 30):
 class ProLSTM(nn.Module):
     def __init__(self, lstm_layers = 1, lstm_hidden_size = 256, embedding_dim = 32, batch_size = 50, vocab_size = 30, clans = 10, families = 100): #1024
         super(ProLSTM, self).__init__()
+        self.name = 'ProLSTM'
 
         # Store values in this object
         self.lstm_layers = lstm_layers
@@ -236,6 +267,7 @@ class ProLSTM(nn.Module):
 class ProGRU(nn.Module):
     def __init__(self, gru_layers = 1, gru_hidden_size = 288, embedding_dim = 32, batch_size = 50, vocab_size = 30, clans = 10, families = 100): #1024
         super(ProGRU, self).__init__()
+        self.name = 'ProGRU'
 
         # Store values in this object
         self.gru_layers = gru_layers
@@ -317,6 +349,8 @@ class ProGRU(nn.Module):
 class ProTrans(nn.Module):
     def __init__(self, nintoken, nouttoken, ninp, nhead, nhid, nlayers, dropout=0.5):
         super(ProTrans, self).__init__()
+        self.name = 'ProTrans'
+
         from torch.nn import TransformerEncoder, TransformerEncoderLayer
         self.model_type = 'Transformer'
         self.pos_encoder = PositionalEncoding(ninp, dropout)
@@ -377,6 +411,8 @@ class ProWaveNet(nn.Module):
                  clans = 10,
                  families = 100):
         super(ProWaveNet, self).__init__()
+        self.name = 'ProWaveNet'
+
         self.num_time_samples = num_time_samples
         self.num_channels = num_channels
         self.num_classes = num_classes
@@ -432,9 +468,7 @@ class ProWaveNet(nn.Module):
             num_embeddings = self.total_size,
             embedding_dim = self.embedding_dim,
             padding_idx = 0 # constant zero padding index
-        )
-        
-        
+        )   
 
     def forward(self, x):
         skips = []
@@ -472,49 +506,58 @@ class ProWaveNet(nn.Module):
         else:
             phase = 'Training'
 
-        losses = []
-        validation_loss = []
-        for epoch in range(1, num_epochs + 1):
-            
-            # Validate network
-            validation_loss.append(evaluate(self, valid_loader))
-            
-            if not validation:
-                super().train()
-            else:
-                self.eval()
-                
-            # reset loss for current phase and epoch
-            running_loss = 0.0
-            running_corrects = 0
-            
-            for inputs, labels in dataloader:
-                inputs = inputs.to(self.device)
-                labels = labels.to(self.device)
-                
-                self.optimizer.zero_grad()
-                
-                # track history only during training phase
-                with torch.set_grad_enabled(not validation):
-                    outputs = self(inputs)
-                    loss = self.criterion(outputs, labels, vocab_size)
-                    
-                    if not validation:
-                        loss.backward()
-                        self.optimizer.step()
-                        
-                running_loss += loss.item()
+        fileName = get_next_file()
+        with open(fileName, 'w') as f:
+            f.write(f'#conf:{self.name}_{num_epochs}epochs_{self.scheduler.get_lr()[0]}lr_{len(dataloader)}trainsize_{len(valid_loader)}validsize\n')
+            f.write('Epoch;Train_loss;Valid_loss\n')
+            f.flush()
 
+            # For tracking intermediate values
+            losses = []
+            validation_loss = []
 
-            # Step The Scheduler
-            self.scheduler.step()
+            for epoch in range(1, num_epochs + 1):
+                # Validate network
+                validation_loss.append(evaluate(self, valid_loader))
+
+                if not validation:
+                    super().train()
+                else:
+                    self.eval()
+
+                # reset loss for current phase and epoch
+                running_loss = 0.0
+
+                for inputs, labels in dataloader:
+                    inputs = inputs.to(self.device)
+                    labels = labels.to(self.device)
+
+                    self.optimizer.zero_grad()
+
+                    # track history only during training phase
+                    with torch.set_grad_enabled(not validation):
+                        outputs = self(inputs)
+                        loss = self.criterion(outputs, labels, vocab_size)
+
+                        if not validation:
+                            loss.backward()
+                            self.optimizer.step()
+
+                    running_loss += loss.item()
+
+                # Step The Scheduler
+                self.scheduler.step()
+
+                losses.append(running_loss / len(dataloader))
+
+                if disp_interval is not None and epoch % disp_interval == 0:
+                    epoch_loss = running_loss / len(dataloader)
+                    print(f'Epoch {epoch}, training loss: {losses[-1]}, Validation Perplexity Loss: {(validation_loss[-1])}')
+                    print('Learning Rate: {}'.format(self.scheduler.get_lr()))
             
-            losses.append(running_loss / len(dataloader))
-            
-            if disp_interval is not None and epoch % disp_interval == 0:
-                epoch_loss = running_loss / len(dataloader)
-                print(f'Epoch {epoch}, training loss: {losses[-1]}, Validation Perplexity Loss: {(validation_loss[-1])}')
-                print('Learning Rate: {}'.format(self.scheduler.get_lr()))
+                # Update file
+                f.write(f'{epoch};{losses[-1]:.5f};{validation_loss[-1]:.5f}\n')
+                f.flush()
   
         epochtotal = np.arange(len(losses))
         plt.figure(figsize=(10,5))
