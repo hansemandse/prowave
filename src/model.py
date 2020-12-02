@@ -6,9 +6,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
-import matplotlib.pyplot as plt
-import seaborn as sns
-sns.set_style('whitegrid')
 
 # Get a new filename for a results file
 def get_next_file():
@@ -104,18 +101,18 @@ def train(net, train_loader, valid_loader, use_pretrained = None, keep_training 
             for inputs, targets in train_loader:
                 # Forward pass
                 optimizer.zero_grad()
-                inputs.to(device)
+                inputs = inputs.to(device)
+                targets = targets.to(device)
                 if type(net) == ProLSTM or type(net) == ProGRU:
                     # To calculate forward pass, we must calculate the original sequence lengths of the
                     # input tensors without padding characters
-                    input_lengths = [sum(k > 0) for k in inputs] 
-                    output = net(inputs, torch.tensor(input_lengths))
+                    input_lengths = torch.tensor([sum(k > 0) for k in inputs]).to(device)
+                    output = net(inputs, input_lengths)
                 elif type(net) == ProTrans:
                     # To calculate forward pass, we must calculate a mask for the source input
-                    src_mask = net.generate_square_subsequent_mask(inputs.size(1))
+                    src_mask = net.generate_square_subsequent_mask(inputs.size(1)).to(device)
                     output = net(inputs, src_mask)
-                    targets = targets.T.contiguous()
-                output.to(device)
+                    targets = targets.T.contiguous().to(device)
                 batch_loss = criterion(output, targets, vocab_size)
 
                 # Back-propagation and weight update
@@ -135,20 +132,20 @@ def train(net, train_loader, valid_loader, use_pretrained = None, keep_training 
             print(f'Epoch {i}, training loss: {training_loss[-1]}, Validation Perplexity Loss: {(validation_loss[-1])}')
 
             # Print the Learning Rate Being Used
-            print('Learning Rate: {}'.format(scheduler.get_lr()))
+            print('Learning Rate: {}'.format(scheduler.get_lr()[0]))
 
             # Update file
             f.write(f'{i};{training_loss[-1]:.5f};{validation_loss[-1]:.5f}\n')
             f.flush()
 
         # Plot training and validation loss
-        epoch = np.arange(len(training_loss))
-        plt.figure(figsize=(10,5))
-        plt.plot(epoch, training_loss, 'r', label='Training loss',)
-        plt.plot(epoch, validation_loss, 'b', label='Validation Perplexity loss',)
-        plt.legend()
-        plt.xlabel('Epoch'), plt.ylabel('NLL')
-        plt.show()
+        #epoch = np.arange(len(training_loss))
+        #plt.figure(figsize=(10,5))
+        #plt.plot(epoch, training_loss, 'r', label='Training loss',)
+        #plt.plot(epoch, validation_loss, 'b', label='Validation Perplexity loss',)
+        #plt.legend()
+        #plt.xlabel('Epoch'), plt.ylabel('NLL')
+        #plt.show()
 
     return best_net.cpu()
 
@@ -165,18 +162,21 @@ def evaluate(net, loader, criterion = plex_loss, vocab_size = 30):
     """
     # First, set the network into evaluation mode
     net.eval()
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     total_loss = 0
     with torch.no_grad():
         for inputs, targets in loader:
+            inputs = inputs.to(device)
+            targets = targets.to(device)
             if type(net) == ProLSTM or type(net) == ProGRU:
-                input_lengths = [sum(k > 0) for k in inputs] 
-                output = net(inputs, torch.tensor(input_lengths))
+                input_lengths = torch.tensor([sum(k > 0) for k in inputs]).to(device)
+                output = net(inputs, input_lengths)
             elif type(net) == ProTrans:
-                src_mask = net.generate_square_subsequent_mask(inputs.size(1))
+                src_mask = net.generate_square_subsequent_mask(inputs.size(1)).to(device)
                 output = net(inputs, src_mask)
-            else: # For the WaveNet do this:
+                targets = targets.T.contiguous()
+            else:
                 output = net(inputs)
-            output.cpu()
             batch_loss = criterion(output, targets, vocab_size)
             total_loss += batch_loss.item()
     return total_loss / len(loader)
@@ -560,12 +560,12 @@ class ProWaveNet(nn.Module):
                 f.flush()
   
         epochtotal = np.arange(len(losses))
-        plt.figure(figsize=(10,5))
-        plt.plot(epochtotal, losses, 'r', label='Training loss',)
-        plt.plot(epochtotal, validation_loss, 'b', label='Validation Perplexity Loss',)
-        plt.legend()
-        plt.xlabel('Epoch'), plt.ylabel('NLL')
-        plt.show()    
+        #plt.figure(figsize=(10,5))
+        #plt.plot(epochtotal, losses, 'r', label='Training loss',)
+        #plt.plot(epochtotal, validation_loss, 'b', label='Validation Perplexity Loss',)
+        #plt.legend()
+        #plt.xlabel('Epoch'), plt.ylabel('NLL')
+        #plt.show()    
 
 class GatedConv1d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, 
