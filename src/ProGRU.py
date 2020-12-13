@@ -42,12 +42,12 @@ valid_dataset = TensorDataset(v_train, v_targets)
 valid_loader = DataLoader(valid_dataset, batch_size = BATCH_SIZE, shuffle = False, num_workers = 8)
 print('Transformed data')
 
-from model import ProLSTM
-netLSTM = ProLSTM(batch_size = BATCH_SIZE)
+from model import ProGRU
+netProGRU = ProGRU(batch_size=BATCH_SIZE)
 print('Created model')
 
 from model import train
-netLSTM = train(netLSTM, train_loader, valid_loader, epochs = EPOCHS)
+netProGRU = train(netProGRU, train_loader, valid_loader, epochs = EPOCHS)
 
-with open('./pretrained/netProLSTM_30Epochs', 'wb') as f:
-    torch.save(netLSTM.state_dict(), f)
+with open('./pretrained/netProGRU_30Epochs', 'wb') as f:
+    torch.save(netProGRU.state_dict(), f)

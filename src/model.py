@@ -319,7 +319,7 @@ class ProGRU(nn.Module):
         X = self.embed(X)
         
         # Run through network
-        X_GRU = nn.utils.rnn.pack_padded_sequence(X, X_lengths, batch_first = True, enforce_sorted = False) # This is set to make sure a not sorted sequence of lenghts is given.
+        X_GRU = nn.utils.rnn.pack_padded_sequence(X, X_lengths.cpu(), batch_first = True, enforce_sorted = False) # This is set to make sure a not sorted sequence of lenghts is given.
         X_GRU, self.hidden = self.gru(X_GRU, self.hidden)
         X_GRU, _ = nn.utils.rnn.pad_packed_sequence(X_GRU, batch_first = True, padding_value = 0, total_length = 514)
         

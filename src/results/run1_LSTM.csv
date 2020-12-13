@@ -1,4 +1,0 @@
-#conf:ProWaveNet_30epochs_0.001lr_5trainsize_25validsize
-Epoch;Train_loss;Valid_loss
-1;3.35406;29.38383
-2;3.27678;27.58352

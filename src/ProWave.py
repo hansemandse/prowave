@@ -42,12 +42,14 @@ valid_dataset = TensorDataset(v_train, v_targets)
 valid_loader = DataLoader(valid_dataset, batch_size = BATCH_SIZE, shuffle = False, num_workers = 8)
 print('Transformed data')
 
-from model import ProLSTM
-netLSTM = ProLSTM(batch_size = BATCH_SIZE)
+from model import ProWaveNet, nll_loss
+netProWave = ProWaveNet( num_time_samples = (512 * 512) + 510 , num_layers = 16, num_hidden = 30, num_channels = 30, num_classes  = 30, num_blocks   = 4, kernel_size  = 2)
+netProWave.criterion = nll_loss
+netProWave.optimizer = optim.Adam(netProWave.parameters(), lr=0.001)
+netProWave.scheduler = optim.lr_scheduler.StepLR(netProWave.optimizer, step_size = 5, gamma = 0.5)
 print('Created model')
 
-from model import train
-netLSTM = train(netLSTM, train_loader, valid_loader, epochs = EPOCHS)
+netProWave.train_WaveNet(train_loader, valid_loader, num_epochs = EPOCHS, disp_interval = 1, vocab_size = 30)
 
-with open('./pretrained/netProLSTM_30Epochs', 'wb') as f:
-    torch.save(netLSTM.state_dict(), f)
+with open('./pretrained/netProWave_30Epochs', 'wb') as f:
+    torch.save(netProWave.state_dict(), f)
